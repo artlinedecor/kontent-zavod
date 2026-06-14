@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: n8n-content-factory
+    env: docker
+    image:
+      url: n8nio/n8n:latest
+    envVars:
+      - key: N8N_HOST
+        value: n8n-content-factory.onrender.com
+      - key: N8N_PORT
+        value: 5678
+      - key: N8N_PROTOCOL
+        value: https
+      - key: NODE_ENV
+        value: production
+      - key: WEBHOOK_URL
+        value: https://n8n-content-factory.onrender.com
+      - key: DB_TYPE
+        value: postgresdb
+      - key: DB_POSTGRESDB_DATABASE
+        value: postgres
+      - key: DB_POSTGRESDB_HOST
+        value: aws-0-ap-northeast-2.pooler.supabase.com
+      - key: DB_POSTGRESDB_PORT
+        value: 6543
+      - key: DB_POSTGRESDB_USER
+        value: postgres.kpzkjwxxsokumklmdwaj
+      - key: DB_POSTGRESDB_PASSWORD
+        value: YA6Fhlnn1kD2RKsL
+      - key: N8N_ENCRYPTION_KEY
+        generateValue: true
+      - key: N8N_BASIC_AUTH_ACTIVE
+        value: true
+      - key: N8N_BASIC_AUTH_USER
+        value: artline_admin
+      - key: N8N_BASIC_AUTH_PASSWORD
+        sync: false

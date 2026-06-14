@@ -1,0 +1,430 @@
+{
+  "name": "Weekly Analytics & Content Plan Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "cron-weekly",
+      "name": "⏰ Every Monday 07:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "application": "appfv9xstsRzEOjTu",
+        "table": "Analytics_Log",
+        "returnAll": true,
+        "options": {
+          "sort": {
+            "property": [
+              {
+                "field": "Date",
+                "direction": "desc"
+              }
+            ]
+          }
+        }
+      },
+      "id": "get-analytics",
+      "name": "📊 Get Analytics Data",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [420, 300],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "mmrJiYmHvNKROxEr",
+          "name": "Airtable Personal Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "application": "appfv9xstsRzEOjTu",
+        "table": "Custom_Topics",
+        "returnAll": true,
+        "options": {
+          "filterByFormula": "{Is_Active} = TRUE()"
+        }
+      },
+      "id": "get-custom-topics",
+      "name": "📝 Get Custom Topics",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [420, 520],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "mmrJiYmHvNKROxEr",
+          "name": "Airtable Personal Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {
+          "values": []
+        },
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "merge-data",
+      "name": "🔗 Merge Analytics + Topics",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [640, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate analytics data for AI analysis\nconst items = $input.all();\n\nconst analyticsData = items.map(item => ({\n  topic: item.json.Post_Topic || '',\n  style: item.json.Visual_Style || '',\n  views: item.json.Views || 0,\n  likes: item.json.Likes || 0,\n  shares: item.json.Shares || 0,\n  saves: item.json.Saves || 0,\n  engagement: item.json.Engagement_Rate || 0\n}));\n\n// Extract custom topics\nconst customTopics = items\n  .filter(i => i.json.Topic_Title)\n  .map(i => ({\n    title: i.json.Topic_Title,\n    description: i.json.Description,\n    keywords: i.json.Keywords\n  }));\n\n// Calculate top performers\nconst scored = analyticsData\n  .filter(a => a.topic)\n  .map(a => ({\n    ...a,\n    score: (a.saves * 3) + (a.shares * 2) + a.likes + (a.views * 0.01)\n  }))\n  .sort((a, b) => b.score - a.score);\n\nconst topTopics = [...new Set(scored.slice(0, 5).map(s => s.topic))];\nconst topStyles = [...new Set(scored.slice(0, 5).map(s => s.style))];\n\nreturn [{\n  json: {\n    analytics_summary: JSON.stringify(scored.slice(0, 20)),\n    custom_topics: JSON.stringify(customTopics),\n    top_topics: topTopics,\n    top_styles: topStyles,\n    total_posts_analyzed: analyticsData.filter(a => a.topic).length,\n    analysis_date: new Date().toISOString().split('T')[0]\n  }\n}];"
+      },
+      "id": "process-analytics",
+      "name": "⚙️ Process & Score Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [860, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"SYSTEM: Sen Artline Decor uchun jahon darajasidagi, ekspert psixolog-marketolog va data-analitiksan. Maqsading: obunachilar (followers) sonini agressiv o'stirish, organik ohvat (reach) ni portlatish va sof foyda (sales) ni maksimal darajaga olib chiqish.\\n\\nANALIZ QOIDALARI:\\n- Target auditoriyaning psixologik 'og'riq nuqtalari' (pain points) va istaklarini (desires) aniqla.\\n- Faqat eng yuqori konversiya (saves + shares = viral ko'rsatkich) keltiradigan 3 ta mavzuni tanla.\\n- Auditoriyani ushlab qoluvchi (hook) trendlarni kirit.\\n\\nCHIQISh: FAQAT YAROQLI JSON:\\n{\\\"top_topics\\\": [\\\"...\\\"], \\\"top_visual_styles\\\": [\\\"...\\\"], \\\"recommended_ratio\\\": {\\\"viral_hook\\\": 40, \\\"trust_building\\\": 30, \\\"hard_selling\\\": 30}, \\\"psychological_insights\\\": \\\"Mijoz nega sotib oladi? Nima majbur qiladi?\\\", \\\"avoid_topics\\\": [\\\"...\\\"]}\\n\\nDATA:\\n\" + $json.analytics_summary\n    }]\n  }],\n  \"generationConfig\": {\n    \"temperature\": 0.3,\n    \"responseMimeType\": \"application/json\"\n  }\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "ai-analyze",
+      "name": "🧠 AI Analytics Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1080, 400],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "JSyk5hMaoWqU3UDn",
+          "name": "Google API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResponse = $input.first().json;\nconst prevData = $('⚙️ Process & Score Data').first().json;\n\nlet insights;\ntry {\n  const text = aiResponse.candidates[0].content.parts[0].text;\n  insights = JSON.parse(text);\n} catch(e) {\n  insights = {\n    top_topics: prevData.top_topics || ['Premium thermo-panel fasadlar', 'Geometric ustun dizaynlari'],\n    top_visual_styles: prevData.top_styles || ['hi-tech facade', 'before-after'],\n    recommended_ratio: { educational: 40, showcase: 30, process: 20, promo: 10 },\n    insights: 'Fallback: Using scored data directly',\n    avoid_topics: []\n  };\n}\n\nreturn [{\n  json: {\n    insights: JSON.stringify(insights),\n    custom_topics: prevData.custom_topics,\n    analysis_date: prevData.analysis_date\n  }\n}];"
+      },
+      "id": "parse-insights",
+      "name": "📋 Parse AI Insights",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"SYSTEM: Sen Artline Decor uchun daho darajasidagi SMM-stenarist va neyromarketing ekspertisan. Maqsading: 7 kunlik (kuniga 2 tadan = 14 ta post) virusli kontent rejasini tuzish.\\n\\nBREND VA PSIXOLOGIYA:\\n- Mahsulot: Premium fasad termopanellari va geometrik dekorlar (O'zbekiston bozori).\\n- Maqsad: Status va boylik hissi, ishonchlilik (uy uzoq yillar xizmat qilishi), issiqlik/sovuqlikdan himoya (pulni tejash).\\n- QAT'IY: Hech qanday guldor, klassik, arzon dizaynlar yo'q. Faqat minimalizm, geometriya, modern, high-tech.\\n\\nSTRATEGIYA (14 ta video/rasm):\\n- 6 ta VIRAL (Ohvat uchun): Hayratlanarli 'Oldin/Keyin', 'Buni bilarmidingiz?', qo'shnilarni lol qoldiradigan fasadlar.\\n- 4 ta ISHONCH (Obunachi uchun): Olovda yonmaslik testi, ustalar siri, pulni 50% tejash siri.\\n- 4 ta SOTUV (Savdo uchun): Chegirma, kotejlarning elit dizaynlari, bepul o'lchov chaqiruvi.\\n\\nMA'LUMOT:\\nMaxsus mavzular: \" + $json.custom_topics + \"\\nAnalitika (Psixologik Hook'lar): \" + $json.insights + \"\\n\\nOUTPUT: Return ONLY a valid JSON array of exactly 14 items:\\n[{\\\"day\\\": 1, \\\"slot\\\": \\\"morning\\\", \\\"topic_uz\\\": \\\"Jozibali va qiziq sarlavha (Hook)\\\", \\\"topic_en\\\": \\\"English prompt topic for AI (no text)\\\", \\\"visual_style\\\": \\\"hi-tech facade|before-after|testing|luxury real estate\\\", \\\"content_type\\\": \\\"Reel/Post\\\", \\\"priority_score\\\": 95}]\"\n    }]\n  }],\n  \"generationConfig\": {\n    \"temperature\": 0.7,\n    \"responseMimeType\": \"application/json\"\n  }\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "ai-plan-generator",
+      "name": "📅 AI Content Plan Generator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1520, 400],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "JSyk5hMaoWqU3UDn",
+          "name": "Google API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResponse = $input.first().json;\nlet contentPlan;\n\ntry {\n  const text = aiResponse.candidates[0].content.parts[0].text;\n  contentPlan = JSON.parse(text);\n} catch(e) {\n  throw new Error('Failed to parse content plan from AI: ' + e.message);\n}\n\nif (!Array.isArray(contentPlan) || contentPlan.length < 1) {\n  throw new Error('Content plan is empty or invalid');\n}\n\n// Calculate dates for the coming week\nconst today = new Date();\nconst monday = new Date(today);\nmonday.setDate(today.getDate() + (1 - today.getDay() + 7) % 7);\nif (monday <= today) monday.setDate(monday.getDate() + 7);\n\nconst weekNum = Math.ceil((monday.getTime() - new Date(monday.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));\n\nconst items = contentPlan.map((item, idx) => {\n  const dayOffset = Math.floor(idx / 2);\n  const date = new Date(monday);\n  date.setDate(monday.getDate() + dayOffset);\n  \n  return {\n    json: {\n      Date: date.toISOString().split('T')[0],\n      Day_Number: dayOffset + 1,\n      Topic_UZ: item.topic_uz || '',\n      Topic_EN: item.topic_en || '',\n      Visual_Style: item.visual_style || 'hi-tech facade',\n      Content_Type: item.content_type || 'Reel',\n      Status: 'Pending',\n      Week_Number: weekNum,\n      Priority_Score: item.priority_score || 50,\n      Slot: item.slot || (idx % 2 === 0 ? 'morning' : 'afternoon')\n    }\n  };\n});\n\nreturn items;"
+      },
+      "id": "format-plan",
+      "name": "🔧 Format Plan Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1740, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"SYSTEM: Sen Google Imagen 3 va Veo 3.1 uchun dunyodagi eng zo'r Prompt Muhandisisan (Cinematographer & Architect).\\n\\nVAZIFA: Bitta berilgan marketing mavzusi uchun 1 ta Rasm Prompti va 1 ta Video Prompti yozish.\\n\\nRASM PROMPT QOIDASI (Imagen 3):\\n- Giperealistik, 8K arxitektura renderi. Premium, lyuks ko'rinish.\\n- Yorug'lik: Dramatic cinematic lighting yoki Golden hour.\\n- QAT'IY: Hech qanday yozuv (text), odamlar va eskirgan naqshlar (floral) BO'LMASIN. Faqat Hi-tech geometriya.\\n\\nVIDEO PROMPT QOIDASI (Veo 3.1):\\n- Gollivud darajasidagi kameralar (ARRI Alexa 65), kinematografik harakatlar (smooth drone push-in, low angle sweeping shot).\\n- Videoning maqsadi: Mijozda 'WOW' effektini chaqirish va obuna bo'lishga majbur qilish.\\n\\nMAVZU: \" + $json.Topic_EN + \"\\nUSLUB: \" + $json.Visual_Style + \"\\n\\nCHIQISh: FAQAT JSON:\\n{\\\"image_prompt\\\": \\\"English prompt...\\\", \\\"video_prompt\\\": \\\"English prompt...\\\"}\"\n    }]\n  }],\n  \"generationConfig\": {\n    \"temperature\": 0.8,\n    \"responseMimeType\": \"application/json\"\n  }\n}",
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 3,
+              "batchInterval": 2000
+            }
+          }
+        }
+      },
+      "id": "generate-prompts",
+      "name": "✨ Generate Image+Video Prompts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1960, 400],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "JSyk5hMaoWqU3UDn",
+          "name": "Google API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst planItems = $('🔧 Format Plan Items').all();\n\nreturn items.map((item, idx) => {\n  let prompts;\n  try {\n    const text = item.json.candidates[0].content.parts[0].text;\n    prompts = JSON.parse(text);\n  } catch(e) {\n    prompts = {\n      image_prompt: `Photorealistic modern building facade with geometric thermo-panels, minimalist column capitals, golden hour lighting, 8K architectural render`,\n      video_prompt: `Cinematic slow drone flyover of modern architectural facade with geometric thermo-panels, smooth camera movement, golden hour, 4K professional architecture film`\n    };\n  }\n\n  const plan = planItems[idx]?.json || {};\n  return {\n    json: {\n      ...plan,\n      Image_Prompt: prompts.image_prompt,\n      Video_Prompt: prompts.video_prompt\n    }\n  };\n});"
+      },
+      "id": "merge-prompts",
+      "name": "🔗 Merge Prompts with Plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2180, 400]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "application": "appfv9xstsRzEOjTu",
+        "table": "Content_Plan",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.Date }}",
+            "Day_Number": "={{ $json.Day_Number }}",
+            "Topic_UZ": "={{ $json.Topic_UZ }}",
+            "Topic_EN": "={{ $json.Topic_EN }}",
+            "Visual_Style": "={{ $json.Visual_Style }}",
+            "Content_Type": "={{ $json.Content_Type }}",
+            "Image_Prompt": "={{ $json.Image_Prompt }}",
+            "Video_Prompt": "={{ $json.Video_Prompt }}",
+            "Status": "Pending",
+            "Week_Number": "={{ $json.Week_Number }}",
+            "Priority_Score": "={{ $json.Priority_Score }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "save-to-airtable",
+      "name": "💾 Save to Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [2400, 400],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "mmrJiYmHvNKROxEr",
+          "name": "Airtable Personal Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst totalItems = items.length;\n\nconst summary = items.slice(0, 14).map((item, i) => {\n  const d = item.json;\n  return `${d.Day_Number || Math.floor(i/2)+1}-kun (${d.Slot || (i%2===0?'ertalab':'tushdan keyin')}): ${d.Topic_UZ || 'Mavzu'}`;\n}).join('\\n');\n\nconst message = `🏭 *KONTENT ZAVODI — Haftalik Plan Tayyor!*\\n\\n📅 Hafta: #${items[0]?.json?.Week_Number || '?'}\\n📊 Jami kontentlar: ${totalItems} ta\\n\\n📋 *Kontent Plan:*\\n${summary}\\n\\n✅ Barcha promptlar generatsiya qilindi\\n💾 Airtable'ga saqlandi\\n⏰ Kunlik ishlab chiqarish avtomatik boshlanadi`;\n\nreturn [{ json: { message } }];"
+      },
+      "id": "prepare-summary",
+      "name": "📝 Prepare Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2620, 400]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "8266195913",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-notify",
+      "name": "📱 Telegram: Plan Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2840, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "jOU7JKhtcHMviF47",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "8266195913",
+        "text": "=⚠️ *XATOLIK — Weekly Analytics Workflow*\n\nNode: {{ $json.node }}\nXabar: {{ $json.message }}\nVaqt: {{ $now.format('yyyy-MM-dd HH:mm') }}\n\nIltimos, n8n dashboardni tekshiring.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "error-notify",
+      "name": "⚠️ Error Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1520, 700],
+      "credentials": {
+        "telegramApi": {
+          "id": "jOU7JKhtcHMviF47",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "⏰ Every Monday 07:00": {
+      "main": [
+        [
+          { "node": "📊 Get Analytics Data", "type": "main", "index": 0 },
+          { "node": "📝 Get Custom Topics", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "📊 Get Analytics Data": {
+      "main": [
+        [
+          { "node": "🔗 Merge Analytics + Topics", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "📝 Get Custom Topics": {
+      "main": [
+        [
+          { "node": "🔗 Merge Analytics + Topics", "type": "main", "index": 1 }
+        ]
+      ]
+    },
+    "🔗 Merge Analytics + Topics": {
+      "main": [
+        [
+          { "node": "⚙️ Process & Score Data", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "⚙️ Process & Score Data": {
+      "main": [
+        [
+          { "node": "🧠 AI Analytics Agent", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "🧠 AI Analytics Agent": {
+      "main": [
+        [
+          { "node": "📋 Parse AI Insights", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "📋 Parse AI Insights": {
+      "main": [
+        [
+          { "node": "📅 AI Content Plan Generator", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "📅 AI Content Plan Generator": {
+      "main": [
+        [
+          { "node": "🔧 Format Plan Items", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "🔧 Format Plan Items": {
+      "main": [
+        [
+          { "node": "✨ Generate Image+Video Prompts", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "✨ Generate Image+Video Prompts": {
+      "main": [
+        [
+          { "node": "🔗 Merge Prompts with Plan", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "🔗 Merge Prompts with Plan": {
+      "main": [
+        [
+          { "node": "💾 Save to Airtable", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "💾 Save to Airtable": {
+      "main": [
+        [
+          { "node": "📝 Prepare Summary", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "📝 Prepare Summary": {
+      "main": [
+        [
+          { "node": "📱 Telegram: Plan Summary", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "content-factory" },
+    { "name": "weekly" },
+    { "name": "analytics" }
+  ],
+  "pinData": {}
+}

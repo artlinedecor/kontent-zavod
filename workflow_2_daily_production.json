@@ -1,0 +1,475 @@
+{
+  "name": "Daily Production Pipeline — Imagen 3 + Veo 3.1",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [{ "mode": "everyMinute" }]
+        },
+        "operation": "search",
+        "application": "appfv9xstsRzEOjTu",
+        "table": "Content_Plan",
+        "triggerField": "Status",
+        "options": {
+          "filterByFormula": "{Status}='Processing'"
+        }
+      },
+      "id": "airtable-processing-trigger",
+      "name": "🔔 Airtable: Processing Trigger",
+      "type": "n8n-nodes-base.airtableTrigger",
+      "typeVersion": 1,
+      "position": [200, 400],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "mmrJiYmHvNKROxEr",
+          "name": "Airtable Personal Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "application": "appfv9xstsRzEOjTu",
+        "table": "Content_Plan",
+        "returnAll": false,
+        "limit": 1,
+        "options": {
+          "filterByFormula": "=AND({Status}='Pending', IS_SAME({Date}, TODAY(), 'day'))",
+          "sort": {
+            "property": [
+              { "field": "Priority_Score", "direction": "desc" }
+            ]
+          }
+        }
+      },
+      "id": "fetch-task",
+      "name": "📋 Fetch Today's Task",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [440, 400],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "mmrJiYmHvNKROxEr",
+          "name": "Airtable Personal Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-has-items",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-task",
+      "name": "✅ Task Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 400]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "application": "appfv9xstsRzEOjTu",
+        "table": "Content_Plan",
+        "id": "={{ $json.id }}",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Status": "Processing"
+          }
+        },
+        "options": {}
+      },
+      "id": "mark-processing",
+      "name": "🔄 Mark Processing",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [880, 300],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "mmrJiYmHvNKROxEr",
+          "name": "Airtable Personal Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:generateImages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"instances\": [\n    {\n      \"prompt\": \"{{ $('📋 Fetch Today\\'s Task').item.json.Image_Prompt }}\"\n    }\n  ],\n  \"parameters\": {\n    \"sampleCount\": 1,\n    \"aspectRatio\": \"9:16\",\n    \"negativePrompt\": \"floral patterns, ornate decorations, flowers, curved ornaments, baroque, rococo, text, watermark, blurry, low quality\"\n  }\n}",
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "imagen-generate",
+      "name": "🎨 Imagen 3: Generate Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 300],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "JSyk5hMaoWqU3UDn",
+          "name": "Google API Key"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\nlet imageBase64;\ntry {\n  // Imagen 3 returns base64 encoded image\n  imageBase64 = response.predictions[0].bytesBase64Encoded \n    || response.generatedImages[0].image.imageBytes;\n} catch(e) {\n  throw new Error('Failed to extract image from Imagen 3 response: ' + JSON.stringify(response).substring(0, 500));\n}\n\n// Convert base64 to binary\nconst binaryData = Buffer.from(imageBase64, 'base64');\n\nreturn [{\n  json: {\n    image_generated: true,\n    image_size: binaryData.length,\n    record_id: $('📋 Fetch Today\\'s Task').first().json.id\n  },\n  binary: {\n    image: {\n      data: imageBase64,\n      mimeType: 'image/png',\n      fileName: `artline_${new Date().toISOString().split('T')[0]}_${Date.now()}.png`\n    }\n  }\n}];"
+      },
+      "id": "process-image",
+      "name": "🖼️ Process Image Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "application": "appfv9xstsRzEOjTu",
+        "table": "Content_Plan",
+        "id": "={{ $json.record_id }}",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Status": "Image_Ready"
+          }
+        },
+        "options": {}
+      },
+      "id": "update-image-status",
+      "name": "💾 Update: Image Ready",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [1540, 300],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "mmrJiYmHvNKROxEr",
+          "name": "Airtable Personal Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"instances\": [\n    {\n      \"prompt\": \"{{ $('📋 Fetch Today\\'s Task').item.json.Video_Prompt }}\"\n    }\n  ],\n  \"parameters\": {\n    \"durationSeconds\": 8,\n    \"aspectRatio\": \"9:16\",\n    \"resolution\": \"720p\",\n    \"sampleCount\": 1\n  }\n}",
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "veo-initiate",
+      "name": "🎬 Veo 3.1: Start Video Gen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 300],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "JSyk5hMaoWqU3UDn",
+          "name": "Google API Key"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst operationName = response.name;\n\nif (!operationName) {\n  throw new Error('Veo 3.1 did not return an operation name: ' + JSON.stringify(response).substring(0, 300));\n}\n\nreturn [{\n  json: {\n    operation_name: operationName,\n    poll_count: 0,\n    max_polls: 40,\n    record_id: $('📋 Fetch Today\\'s Task').first().json.id\n  }\n}];"
+      },
+      "id": "extract-operation",
+      "name": "📎 Extract Operation ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, 300]
+    },
+    {
+      "parameters": {
+        "amount": 15,
+        "unit": "seconds"
+      },
+      "id": "wait-poll",
+      "name": "⏳ Wait 15s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [2200, 300],
+      "webhookId": "veo-poll-wait"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/{{ $json.operation_name }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "veo-poll",
+      "name": "🔍 Poll Veo Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2420, 300],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "JSyk5hMaoWqU3UDn",
+          "name": "Google API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "is-done",
+              "leftValue": "={{ $json.done }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-done",
+      "name": "✅ Video Done?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pollResponse = $input.first().json;\nconst prevData = $('📎 Extract Operation ID').first().json;\nconst pollCount = (prevData.poll_count || 0) + 1;\n\nif (pollCount >= prevData.max_polls) {\n  throw new Error(`Veo 3.1 timed out after ${pollCount} polls (${pollCount * 15}s)`);\n}\n\nreturn [{\n  json: {\n    operation_name: prevData.operation_name,\n    poll_count: pollCount,\n    max_polls: prevData.max_polls,\n    record_id: prevData.record_id\n  }\n}];"
+      },
+      "id": "increment-poll",
+      "name": "🔄 Retry Poll",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2860, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pollResponse = $input.first().json;\nlet videoBase64;\n\ntry {\n  videoBase64 = pollResponse.response.generatedVideos[0].video.videoBytes\n    || pollResponse.response.predictions[0].bytesBase64Encoded;\n} catch(e) {\n  throw new Error('Failed to extract video: ' + JSON.stringify(pollResponse).substring(0, 500));\n}\n\nconst recordId = $('📎 Extract Operation ID').first().json.record_id;\n\nreturn [{\n  json: {\n    video_generated: true,\n    record_id: recordId\n  },\n  binary: {\n    video: {\n      data: videoBase64,\n      mimeType: 'video/mp4',\n      fileName: `artline_video_${new Date().toISOString().split('T')[0]}_${Date.now()}.mp4`\n    }\n  }\n}];"
+      },
+      "id": "process-video",
+      "name": "🎥 Process Video Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2860, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"SYSTEM: Sen Artline Decor uchun Daho Darajasidagi Kopirayter, Neyromarketolog va Psixologsan. Yozgan har bir matning (caption) mijozlarni o'ziga jalb qilishi, ishonchini qozonishi va SOTUVGA (DM/Call) undashi shart.\\n\\nBREND VA AUDITORIYA:\\n- Ovoz (Voice): Premium, ekspert, ishonchli, elit.\\n- Auditoriya: O'zbekistondagi uy egalari, kotej qurayotganlar, arxitektorlar.\\n\\nKOPIRAYTING (AIDA + PAS STRATEGIYASI):\\n1. HOOK (Ilgak): Birinchi qator shok qiluvchi, qiziqtiruvchi yoki kuchli og'riq nuqtasini bosuvchi savol bo'lishi kerak. Emojidan foydalan.\\n2. AGITATE (Og'riqni kuchaytirish): Arzon fasad materiallarining oqibatlari (yoriqlar, issiqlik yo'qotish, xunuk ko'rinish).\\n3. SOLUTION (Yechim): Artline Decor termopanellari va elit dizaynlari bu muammoni qanday qilib bir umrga hal qiladi.\\n4. SOCIAL PROOF & STATUS: Qo'shnilar havas qiladigan fasad, uzoq yillik kafolat, status ko'rsatkichi.\\n5. FOMO & CTA (Harakatga chorlov): Kamchilik hissini (FOMO) yarat (Masalan: 'Joriy mavsum uchun o'lchov olish o'rinlari cheklangan'). Directga (DM) '+' yozishga yoki qo'ng'iroq qilishga majbur qil.\\n\\nHASHTAGLAR (Mutlaqo ilmiy SEO): 20 ta hashtag. 5 ta brand (#ArtlineDecor #ArtlineUz), 10 ta muayyan (#termopanel #fasaddizayn #kotej #qurilish), 5 ta lokatsiya (#Toshkent #Uzbekistan).\\n\\nMAVZU: {{ $('📋 Fetch Today\\'s Task').item.json.Topic_UZ }}\\nUSLUB: {{ $('📋 Fetch Today\\'s Task').item.json.Visual_Style }}\\n\\nCHIQISh: FAQAT JSON:\\n{\\\"caption\\\": \\\"Mukammal O'zbekcha matn\\\", \\\"hashtags\\\": \\\"#tag1 #tag2...\\\", \\\"hook_line\\\": \\\"Birinchi qator...\\\"}\"\n    }]\n  }],\n  \"generationConfig\": {\n    \"temperature\": 0.8,\n    \"responseMimeType\": \"application/json\"\n  }\n}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "generate-caption",
+      "name": "✍️ AI Caption Generator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3080, 200],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "JSyk5hMaoWqU3UDn",
+          "name": "Google API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const captionResponse = $input.first().json;\nconst videoData = $('🎥 Process Video Binary').first();\nconst taskData = $('📋 Fetch Today\\'s Task').first().json;\n\nlet caption;\ntry {\n  const text = captionResponse.candidates[0].content.parts[0].text;\n  caption = JSON.parse(text);\n} catch(e) {\n  caption = {\n    caption: `🏗️ ${taskData.Topic_UZ}\\n\\nArtline Decor — premium fasad yechimlari\\n\\n📞 Biz bilan bog'laning!`,\n    hashtags: '#ArtlineDecor #termopanel #fasad #Toshkent #arxitektura',\n    hook_line: `🏗️ ${taskData.Topic_UZ}`\n  };\n}\n\nreturn [{\n  json: {\n    record_id: videoData.json.record_id,\n    caption: caption.caption,\n    hashtags: caption.hashtags,\n    hook_line: caption.hook_line,\n    topic: taskData.Topic_UZ,\n    date: taskData.Date\n  },\n  binary: videoData.binary\n}];"
+      },
+      "id": "prepare-delivery",
+      "name": "📦 Prepare for Delivery",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3300, 200]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "application": "appfv9xstsRzEOjTu",
+        "table": "Content_Plan",
+        "id": "={{ $json.record_id }}",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Status": "Video_Ready",
+            "Caption_UZ": "={{ $json.caption }}",
+            "Hashtags": "={{ $json.hashtags }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "update-video-ready",
+      "name": "💾 Update: Video Ready",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [3520, 200],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "mmrJiYmHvNKROxEr",
+          "name": "Airtable Personal Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "8266195913",
+        "text": "=⚠️ *Production Pipeline XATOLIK*\n\n📅 Sana: {{ $('📋 Fetch Today\\'s Task').item.json.Date }}\n📝 Mavzu: {{ $('📋 Fetch Today\\'s Task').item.json.Topic_UZ }}\n❌ Xatolik: {{ $json.message || 'Noma\\'lum xatolik' }}\n\nn8n dashboardni tekshiring.",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "error-handler",
+      "name": "⚠️ Error → Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1760, 600],
+      "credentials": {
+        "telegramApi": {
+          "id": "jOU7JKhtcHMviF47",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "🔔 Airtable: Processing Trigger": {
+      "main": [[{ "node": "📋 Fetch Today's Task", "type": "main", "index": 0 }]]
+    },
+    "📋 Fetch Today's Task": {
+      "main": [[{ "node": "✅ Task Exists?", "type": "main", "index": 0 }]]
+    },
+    "✅ Task Exists?": {
+      "main": [
+        [{ "node": "🔄 Mark Processing", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "🔄 Mark Processing": {
+      "main": [[{ "node": "🎨 Imagen 3: Generate Image", "type": "main", "index": 0 }]]
+    },
+    "🎨 Imagen 3: Generate Image": {
+      "main": [
+        [{ "node": "🖼️ Process Image Binary", "type": "main", "index": 0 }],
+        [{ "node": "⚠️ Error → Telegram", "type": "main", "index": 0 }]
+      ]
+    },
+    "🖼️ Process Image Binary": {
+      "main": [[{ "node": "💾 Update: Image Ready", "type": "main", "index": 0 }]]
+    },
+    "💾 Update: Image Ready": {
+      "main": [[{ "node": "🎬 Veo 3.1: Start Video Gen", "type": "main", "index": 0 }]]
+    },
+    "🎬 Veo 3.1: Start Video Gen": {
+      "main": [
+        [{ "node": "📎 Extract Operation ID", "type": "main", "index": 0 }],
+        [{ "node": "⚠️ Error → Telegram", "type": "main", "index": 0 }]
+      ]
+    },
+    "📎 Extract Operation ID": {
+      "main": [[{ "node": "⏳ Wait 15s", "type": "main", "index": 0 }]]
+    },
+    "⏳ Wait 15s": {
+      "main": [[{ "node": "🔍 Poll Veo Status", "type": "main", "index": 0 }]]
+    },
+    "🔍 Poll Veo Status": {
+      "main": [[{ "node": "✅ Video Done?", "type": "main", "index": 0 }]]
+    },
+    "✅ Video Done?": {
+      "main": [
+        [{ "node": "🎥 Process Video Binary", "type": "main", "index": 0 }],
+        [{ "node": "🔄 Retry Poll", "type": "main", "index": 0 }]
+      ]
+    },
+    "🔄 Retry Poll": {
+      "main": [[{ "node": "⏳ Wait 15s", "type": "main", "index": 0 }]]
+    },
+    "🎥 Process Video Binary": {
+      "main": [[{ "node": "✍️ AI Caption Generator", "type": "main", "index": 0 }]]
+    },
+    "✍️ AI Caption Generator": {
+      "main": [[{ "node": "📦 Prepare for Delivery", "type": "main", "index": 0 }]]
+    },
+    "📦 Prepare for Delivery": {
+      "main": [[{ "node": "💾 Update: Video Ready", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": 900
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "content-factory" },
+    { "name": "daily" },
+    { "name": "production" }
+  ],
+  "pinData": {}
+}
