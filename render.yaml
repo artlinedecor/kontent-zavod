@@ -19,11 +19,11 @@ services:
       - key: DB_POSTGRESDB_DATABASE
         value: postgres
       - key: DB_POSTGRESDB_HOST
-        value: db.kpzkjwxxsokumklmdwaj.supabase.co
+        value: aws-1-ap-northeast-2.pooler.supabase.com
       - key: DB_POSTGRESDB_PORT
         value: 5432
       - key: DB_POSTGRESDB_USER
-        value: postgres
+        value: postgres.kpzkjwxxsokumklmdwaj
       - key: DB_POSTGRESDB_PASSWORD
         value: YA6Fhlnn1kD2RKsL
       - key: N8N_ENCRYPTION_KEY
@@ -34,3 +34,13 @@ services:
         value: artline_admin
       - key: N8N_BASIC_AUTH_PASSWORD
         sync: false
+      - key: EXECUTIONS_PROCESS
+        value: main
+      - key: EXECUTIONS_DATA_PRUNE
+        value: "true"
+      - key: EXECUTIONS_DATA_MAX_AGE
+        value: "168"
+      - key: N8N_DIAGNOSTICS_ENABLED
+        value: "false"
+      - key: N8N_PERSONALIZATION_ENABLED
+        value: "false"
