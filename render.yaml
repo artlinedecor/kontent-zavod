@@ -27,7 +27,7 @@ services:
       - key: DB_POSTGRESDB_PASSWORD
         value: YA6Fhlnn1kD2RKsL
       - key: N8N_ENCRYPTION_KEY
-        generateValue: true
+        value: smartcontentfactoryencryptionkey2026
       - key: N8N_BASIC_AUTH_ACTIVE
         value: true
       - key: N8N_BASIC_AUTH_USER
